@@ -1,0 +1,170 @@
+<style>
+  :root { --main: #020617; --accent: #fbbf24; --blue: #2563eb; --card: #1e293b; }
+  body { background: var(--main); color: white; font-family: 'Segoe UI', sans-serif; margin: 0; padding-bottom: 120px; }
+  .container { padding: 15px; max-width: 600px; margin: auto; }
+  .card { background: var(--card); padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #334155; }
+  
+  /* Modal styling like CricHeroes */
+  #modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); display: none; z-index: 9999; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+  .modal-btn { display: block; width: 100%; padding: 15px; margin: 10px 0; background: var(--blue); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; }
+  .btn-red { background: #dc2626 !important; }
+  
+  /* Professional Score Bar */
+  #tv-bar { position: fixed; bottom: 0; left: 0; width: 100%; z-index: 5000; }
+  .over-strip { background: rgba(0,0,0,0.9); padding: 5px 15px; display: flex; align-items: center; gap: 8px; border-top: 2px solid var(--accent); }
+  .main-bar { height: 75px; background: linear-gradient(to right, #064e3b 30%, #000 30%, #000 70%, #7f1d1d 70%); display: flex; align-items: center; }
+</style>
+
+<div class="container">
+  <div id="setup-view" class="card">
+    <h3 style="color:var(--accent)">🏆 Tournament Squads</h3>
+    <select id="slot-idx"><script>for(let i=1;i<=10;i++) document.write(`<option value="${i}">Team ${i}</option>`)</script></select>
+    <input type="text" id="t-name" placeholder="Team Name" style="width:100%; padding:10px; margin:5px 0;">
+    <textarea id="t-p" placeholder="Enter Players (comma separated)" rows="3" style="width:100%; margin-bottom:10px;"></textarea>
+    <button onclick="saveT()" class="modal-btn">Save Team Data</button>
+    
+    <hr style="margin:20px 0; opacity:0.2;">
+    
+    <h3>🏏 Match Setup</h3>
+    <label>Batting Team:</label> <select id="sel-t1" style="width:100%; padding:10px;"></select>
+    <label>Bowling Team:</label> <select id="sel-t2" style="width:100%; padding:10px;"></select>
+    <button onclick="openToss()" class="modal-btn" style="background:#7c3aed;">Go to Toss</button>
+  </div>
+
+  <div id="score-view" style="display:none;">
+    <div class="card" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
+      <button class="modal-btn" style="margin:0" onclick="ball(0)">0</button>
+      <button class="modal-btn" style="margin:0" onclick="ball(1)">1</button>
+      <button class="modal-btn" style="margin:0" onclick="ball(2)">2</button>
+      <button class="modal-btn" style="margin:0" onclick="ball(3)">3</button>
+      <button class="modal-btn" style="margin:0; background:var(--accent); color:#000;" onclick="ball(4)">4</button>
+      <button class="modal-btn" style="margin:0; background:var(--accent); color:#000;" onclick="ball(6)">6</button>
+      <button class="modal-btn" style="margin:0; background:orange;" onclick="askExtra('WD')">WD</button>
+      <button class="modal-btn" style="margin:0; background:orange;" onclick="askExtra('NB')">NB</button>
+      <button class="modal-btn btn-red" style="margin:0; grid-column: span 2;" onclick="askWicket()">WICKET (OUT)</button>
+      <button class="modal-btn" style="margin:0; grid-column: span 2; background:#059669" onclick="undo()">UNDO</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-overlay">
+  <h2 id="modal-title" style="text-align:center; color:var(--accent);">Select Option</h2>
+  <div id="modal-content"></div>
+</div>
+
+<div id="tv-bar" style="display:none;">
+  <div class="over-strip"><span style="font-size:10px; color:var(--accent);">THIS OVER</span><div id="balls-list" style="display:flex; gap:5px;"></div></div>
+  <div class="main-bar">
+    <div style="flex:1; padding-left:15px;">
+      <div id="ui-team-name" style="font-size:10px; color:var(--accent);">TEAM</div>
+      <div style="font-size:24px; font-weight:900;"><span id="ui-runs">0</span>-<span id="ui-wkts">0</span> <span style="font-size:12px;">(<span id="ui-ovs">0.0</span>)</span></div>
+    </div>
+    <div style="flex:1.2; text-align:center; border-left:1px solid #333; border-right:1px solid #333;">
+      <div id="ui-bat1" style="font-size:13px; font-weight:bold;">P1* 0(0)</div>
+      <div id="ui-bat2" style="font-size:13px; opacity:0.8;">P2 0(0)</div>
+    </div>
+    <div style="flex:1; text-align:right; padding-right:15px;">
+      <div id="ui-bwl-name" style="font-size:10px; opacity:0.7;">BOWLER</div>
+      <div id="ui-bwl-stat" style="font-size:15px; color:var(--accent); font-weight:bold;">0-0 (0.0)</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let squads = JSON.parse(localStorage.getItem('pak_squads')) || {};
+let m = { r:0, w:0, b:0, p1:{n:"",r:0,b:0}, p2:{n:"",r:0,b:0}, bwl:{n:"",r:0,w:0,b:0}, stk:1, hist:[], ovB:[] };
+
+function saveT() {
+  let id = document.getElementById('slot-idx').value;
+  let n = document.getElementById('t-name').value;
+  let p = document.getElementById('t-p').value.split(',').map(x=>x.trim());
+  if(!n) return alert("Team name likhain!");
+  squads[id] = { n, p };
+  localStorage.setItem('pak_squads', JSON.stringify(squads));
+  updateDrops(); alert("Team Saved!");
+}
+
+function updateDrops() {
+  let h = Object.keys(squads).map(id => `<option value="${id}">${squads[id].n}</option>`).join('');
+  document.getElementById('sel-t1').innerHTML = h; document.getElementById('sel-t2').innerHTML = h;
+}
+
+function openToss() {
+  let t1 = squads[document.getElementById('sel-t1').value].n;
+  let t2 = squads[document.getElementById('sel-t2').value].n;
+  showM("Who won the Toss?", [t1, t2], winner => {
+    showM(winner + " decided to?", ["BAT FIRST", "BOWL FIRST"], dec => {
+      m.batTeam = (dec==="BAT FIRST" && winner===t1) || (dec==="BOWL FIRST" && winner===t2) ? squads[document.getElementById('sel-t1').value] : squads[document.getElementById('sel-t2').value];
+      m.bowlTeam = m.batTeam.n === t1 ? squads[document.getElementById('sel-t2').value] : squads[document.getElementById('sel-t1').value];
+      startMatchFlow();
+    });
+  });
+}
+
+function startMatchFlow() {
+  document.getElementById('setup-view').style.display='none';
+  document.getElementById('score-view').style.display='block';
+  document.getElementById('tv-bar').style.display='block';
+  document.getElementById('ui-team-name').innerText = m.batTeam.n;
+  showM("Select Opening Batsman 1", m.batTeam.p, n1 => { m.p1.n=n1;
+    showM("Select Opening Batsman 2", m.batTeam.p.filter(x=>x!==n1), n2 => { m.p2.n=n2;
+      showM("Select Opening Bowler", m.bowlTeam.p, b => { m.bwl.n=b; updateUI(); });
+    });
+  });
+}
+
+function askExtra(type) {
+  showM(type + " + How many runs?", ["0","1","2","3","4","6"], r => {
+    saveH(); let runs = parseInt(r); m.r += (runs+1); m.bwl.r += (runs+1);
+    m.ovB.push({l:type+(runs>0?'+'+runs:''), c:'orange'});
+    updateUI();
+  });
+}
+
+function askWicket() {
+  showM("Wicket Type?", ["Bowled", "Caught", "Run Out", "Stumped", "LBW"], type => {
+    saveH(); m.w++; m.b++; m.bwl.b++; if(type!=="Run Out") m.bwl.w++;
+    m.ovB.push({l:'W', c:'#dc2626'});
+    showM("Next Batsman?", m.batTeam.p, n => {
+      if(m.stk===1) m.p1={n:n,r:0,b:0}; else m.p2={n:n,r:0,b:0};
+      checkOver(); updateUI();
+    });
+  });
+}
+
+function ball(r) {
+  saveH(); m.r+=r; m.b++; m.bwl.r+=r; m.bwl.b++;
+  let cur = m.stk===1?m.p1:m.p2; cur.r+=r; cur.b++;
+  m.ovB.push({l:r, c: r===6?'#7c3aed':(r===4?'#2563eb':'#444')});
+  if(r%2!==0) m.stk=m.stk===1?2:1;
+  checkOver(); updateUI();
+}
+
+function checkOver() {
+  if(m.b%6===0 && m.b>0) {
+    m.stk=m.stk===1?2:1;
+    setTimeout(() => { m.ovB=[]; showM("Select New Bowler", m.bowlTeam.p, b => { m.bwl={n:b,r:0,w:0,b:0}; updateUI(); }); }, 800);
+  }
+}
+
+function showM(title, opts, cb) {
+  let ov = document.getElementById('modal-overlay'); ov.style.display='block';
+  document.getElementById('modal-title').innerText = title;
+  document.getElementById('modal-content').innerHTML = opts.map(o => `<button class="modal-btn" onclick="selM('${o}')">${o}</button>`).join('');
+  window.mCB = cb;
+}
+function selM(v) { document.getElementById('modal-overlay').style.display='none'; window.mCB(v); }
+function saveH() { m.hist.push(JSON.stringify(m)); }
+function undo() { if(m.hist.length>0) { m = JSON.parse(m.hist.pop()); updateUI(); } }
+
+function updateUI() {
+  document.getElementById('ui-runs').innerText = m.r; document.getElementById('ui-wkts').innerText = m.w;
+  document.getElementById('ui-ovs').innerText = Math.floor(m.b/6) + "." + (m.b%6);
+  document.getElementById('ui-bat1').innerText = m.p1.n + (m.stk===1?'* ':' ') + m.p1.r + "(" + m.p1.b + ")";
+  document.getElementById('ui-bat2').innerText = m.p2.n + (m.stk===2?'* ':' ') + m.p2.r + "(" + m.p2.b + ")";
+  document.getElementById('ui-bwl-name').innerText = m.bwl.n;
+  document.getElementById('ui-bwl-stat').innerText = `${m.bwl.w}-${m.bwl.r} (${Math.floor(m.bwl.b/6)}.${m.bwl.b%6})`;
+  document.getElementById('balls-list').innerHTML = m.ovB.map(b => `<div style="width:25px; height:25px; border-radius:50%; background:${b.c}; color:white; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold;">${b.l}</div>`).join('');
+}
+updateDrops();
+</script>
